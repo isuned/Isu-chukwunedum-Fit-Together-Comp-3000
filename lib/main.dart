@@ -1,11 +1,13 @@
 
 
+
 import 'package:flutter/material.dart';
 
 void main() {
   runApp(const FitTogetherApp());
 }
 
+// FITTOGETHER APPLICATION
 class FitTogetherApp extends StatelessWidget {
   const FitTogetherApp({super.key});
 
@@ -25,7 +27,22 @@ class FitTogetherApp extends StatelessWidget {
   }
 }
 
-// MAIN NAVIGATION
+// SAMPLE FRIEND MODEL
+class Friend {
+  final String name;
+  final int steps;
+  final int goal;
+
+  const Friend({
+    required this.name,
+    required this.steps,
+    required this.goal,
+  });
+
+  double get progress => steps / goal;
+}
+
+// MAIN NAVIGATION AND SHARED DATA
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
@@ -36,14 +53,48 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int selectedIndex = 0;
 
-  final List<Widget> pages = const [
-    HomeScreen(),
-    FriendsScreen(),
-    LeaderboardScreen(),
+  int mySteps = 6500;
+  int myGoal = 10000;
+
+  final List<Friend> friends = [
+    const Friend(name: 'Brother', steps: 10000, goal: 12000),
+    const Friend(name: 'Alex', steps: 7500, goal: 10000),
+    const Friend(name: 'Sarah', steps: 4200, goal: 8000),
   ];
+
+  void updateGoal(int newGoal) {
+    setState(() {
+      myGoal = newGoal;
+    });
+  }
+
+  void addFriend(String name) {
+    setState(() {
+      friends.add(
+        Friend(name: name, steps: 0, goal: 10000),
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final pages = [
+      HomeScreen(
+        steps: mySteps,
+        goal: myGoal,
+        onGoalChanged: updateGoal,
+      ),
+      FriendsScreen(
+        friends: friends,
+        onAddFriend: addFriend,
+      ),
+      LeaderboardScreen(
+        mySteps: mySteps,
+        myGoal: myGoal,
+        friends: friends,
+      ),
+    ];
+
     return Scaffold(
       body: SafeArea(
         child: pages[selectedIndex],
@@ -78,21 +129,24 @@ class _MainScreenState extends State<MainScreen> {
 }
 
 // HOME SCREEN
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class HomeScreen extends StatelessWidget {
+  final int steps;
+  final int goal;
+  final ValueChanged<int> onGoalChanged;
 
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
+  const HomeScreen({
+    super.key,
+    required this.steps,
+    required this.goal,
+    required this.onGoalChanged,
+  });
 
-class _HomeScreenState extends State<HomeScreen> {
-  int steps = 6500;
-  int goal = 10000;
+  Future<void> changeGoal(BuildContext context) async {
+    final controller = TextEditingController(
+      text: goal.toString(),
+    );
 
-  Future<void> changeGoal() async {
-    final controller = TextEditingController(text: goal.toString());
-
-    await showDialog<void>(
+    final newGoal = await showDialog<int>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
@@ -112,13 +166,10 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             ElevatedButton(
               onPressed: () {
-                final newGoal = int.tryParse(controller.text.trim());
+                final value = int.tryParse(controller.text.trim());
 
-                if (newGoal != null && newGoal > 0) {
-                  setState(() {
-                    goal = newGoal;
-                  });
-                  Navigator.pop(dialogContext);
+                if (value != null && value > 0) {
+                  Navigator.pop(dialogContext, value);
                 }
               },
               child: const Text('Save'),
@@ -129,6 +180,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     controller.dispose();
+
+    if (newGoal != null) {
+      onGoalChanged(newGoal);
+    }
   }
 
   @override
@@ -150,10 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Every step counts!',
-              style: TextStyle(fontSize: 16),
-            ),
+            const Text('Every step counts!'),
             const SizedBox(height: 40),
             const Text(
               "Today's Steps",
@@ -214,16 +266,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: Colors.green,
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     Text(
                       steps >= goal
-                          ? 'Congratulations! You have reached your daily goal!'
-                          : 'Keep going! You are doing great.',
-                      textAlign: TextAlign.center,
+                          ? 'Congratulations! Goal reached!'
+                          : 'Keep going! Every step counts.',
                     ),
                     const SizedBox(height: 20),
                     ElevatedButton.icon(
-                      onPressed: changeGoal,
+                      onPressed: () => changeGoal(context),
                       icon: const Icon(Icons.edit),
                       label: const Text('Change Goal'),
                     ),
@@ -238,25 +289,21 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// FRIENDS AND FAMILY SCREEN
-class FriendsScreen extends StatefulWidget {
-  const FriendsScreen({super.key});
+// FRIENDS SCREEN
+class FriendsScreen extends StatelessWidget {
+  final List<Friend> friends;
+  final ValueChanged<String> onAddFriend;
 
-  @override
-  State<FriendsScreen> createState() => _FriendsScreenState();
-}
+  const FriendsScreen({
+    super.key,
+    required this.friends,
+    required this.onAddFriend,
+  });
 
-class _FriendsScreenState extends State<FriendsScreen> {
-  final List<Map<String, dynamic>> friends = [
-    {'name': 'Brother', 'steps': 10000, 'goal': 12000},
-    {'name': 'Alex', 'steps': 7500, 'goal': 10000},
-    {'name': 'Sarah', 'steps': 4200, 'goal': 8000},
-  ];
-
-  Future<void> addFriend() async {
+  Future<void> addFriend(BuildContext context) async {
     final controller = TextEditingController();
 
-    await showDialog<void>(
+    final name = await showDialog<String>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
@@ -276,16 +323,8 @@ class _FriendsScreenState extends State<FriendsScreen> {
             ElevatedButton(
               onPressed: () {
                 final name = controller.text.trim();
-
                 if (name.isNotEmpty) {
-                  setState(() {
-                    friends.add({
-                      'name': name,
-                      'steps': 0,
-                      'goal': 10000,
-                    });
-                  });
-                  Navigator.pop(dialogContext);
+                  Navigator.pop(dialogContext, name);
                 }
               },
               child: const Text('Add'),
@@ -296,6 +335,10 @@ class _FriendsScreenState extends State<FriendsScreen> {
     );
 
     controller.dispose();
+
+    if (name != null) {
+      onAddFriend(name);
+    }
   }
 
   @override
@@ -314,39 +357,33 @@ class _FriendsScreenState extends State<FriendsScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Stay active together!',
-              style: TextStyle(fontSize: 16),
-            ),
+            const Text('Stay active together!'),
             const SizedBox(height: 20),
             ElevatedButton.icon(
-              onPressed: addFriend,
+              onPressed: () => addFriend(context),
               icon: const Icon(Icons.person_add),
               label: const Text('Add Friend'),
             ),
             const SizedBox(height: 20),
             ...friends.map((friend) {
-              final int friendSteps = friend['steps'] as int;
-              final int friendGoal = friend['goal'] as int;
-              final double progress =
-                  (friendSteps / friendGoal).clamp(0.0, 1.0);
-
               return Card(
                 margin: const EdgeInsets.only(bottom: 12),
                 child: ListTile(
                   leading: const CircleAvatar(
                     child: Icon(Icons.person),
                   ),
-                  title: Text(friend['name'] as String),
+                  title: Text(friend.name),
                   subtitle: Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('$friendSteps / $friendGoal steps'),
+                        Text(
+                          '${friend.steps} / ${friend.goal} steps',
+                        ),
                         const SizedBox(height: 8),
                         LinearProgressIndicator(
-                          value: progress,
+                          value: friend.progress.clamp(0.0, 1.0),
                           minHeight: 8,
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -365,16 +402,199 @@ class _FriendsScreenState extends State<FriendsScreen> {
 }
 
 // LEADERBOARD SCREEN
-class LeaderboardScreen extends StatelessWidget {
-  const LeaderboardScreen({super.key});
+class LeaderboardScreen extends StatefulWidget {
+  final int mySteps;
+  final int myGoal;
+  final List<Friend> friends;
+
+  const LeaderboardScreen({
+    super.key,
+    required this.mySteps,
+    required this.myGoal,
+    required this.friends,
+  });
+
+  @override
+  State<LeaderboardScreen> createState() =>
+      _LeaderboardScreenState();
+}
+
+class _LeaderboardScreenState extends State<LeaderboardScreen> {
+  bool fairCompetition = false;
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Text(
-        'Leaderboard\nComing Soon!',
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 24),
+    final users = [
+      Friend(
+        name: 'You',
+        steps: widget.mySteps,
+        goal: widget.myGoal,
+      ),
+      ...widget.friends,
+    ];
+
+    // Rank users by steps or personal goal progress.
+    users.sort((a, b) {
+      if (!fairCompetition) {
+        return b.steps.compareTo(a.steps);
+      }
+
+      // Competition scores are capped at 100%.
+      final aScore = a.progress.clamp(0.0, 1.0);
+      final bScore = b.progress.clamp(0.0, 1.0);
+
+      final result = bScore.compareTo(aScore);
+
+      if (result != 0) return result;
+
+      // Use total steps to break equal-score ties.
+      return b.steps.compareTo(a.steps);
+    });
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 500),
+        child: ListView(
+          padding: const EdgeInsets.all(24),
+          children: [
+            const Text(
+              'Leaderboard',
+              style: TextStyle(
+                fontSize: 30,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text('See how everyone is doing!'),
+            const SizedBox(height: 24),
+
+            // LEADERBOARD SWITCH
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment<bool>(
+                  value: false,
+                  label: Text('Total Steps'),
+                  icon: Icon(Icons.directions_walk),
+                ),
+                ButtonSegment<bool>(
+                  value: true,
+                  label: Text('Fair Competition'),
+                  icon: Icon(Icons.flag),
+                ),
+              ],
+              selected: {fairCompetition},
+              onSelectionChanged: (selection) {
+                setState(() {
+                  fairCompetition = selection.first;
+                });
+              },
+            ),
+
+            const SizedBox(height: 24),
+
+            Text(
+              fairCompetition
+                  ? 'Personal Goal Leaderboard'
+                  : 'Most Steps Today',
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            Text(
+              fairCompetition
+                  ? 'Ranked by progress towards personal goals.'
+                  : 'Ranked by total daily steps.',
+            ),
+
+            const SizedBox(height: 20),
+
+            // RANKING LIST
+            ...List.generate(users.length, (index) {
+              final user = users[index];
+              final rank = index + 1;
+
+              final rankProgress =
+                  user.progress.clamp(0.0, 1.0);
+
+              final score = fairCompetition
+                  ? '${(rankProgress * 100).toStringAsFixed(1)}%'
+                  : '${user.steps} steps';
+
+              final medals = ['🥇', '🥈', '🥉'];
+
+              final rankText = index < 3
+                  ? medals[index]
+                  : '$rank';
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 40,
+                        child: Text(
+                          rankText,
+                          style: const TextStyle(fontSize: 22),
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              user.name,
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${user.steps} / ${user.goal} steps',
+                            ),
+                            const SizedBox(height: 8),
+                            LinearProgressIndicator(
+                              value: rankProgress,
+                              minHeight: 8,
+                              borderRadius:
+                                  BorderRadius.circular(10),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        score,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+
+            if (fairCompetition)
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: Text(
+                  'Competition scores are capped at 100%. '
+                  'If scores are equal, the user with more '
+                  'steps ranks higher.',
+                  style: TextStyle(fontSize: 13),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
