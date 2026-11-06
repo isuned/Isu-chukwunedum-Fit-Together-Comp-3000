@@ -1,13 +1,25 @@
 
 
 
-import 'package:flutter/material.dart';
 
-void main() {
+import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+import 'firebase_options.dart';
+import 'auth_screen.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
   runApp(const FitTogetherApp());
 }
 
-// FITTOGETHER APPLICATION
+// MAIN APPLICATION
 class FitTogetherApp extends StatelessWidget {
   const FitTogetherApp({super.key});
 
@@ -22,7 +34,32 @@ class FitTogetherApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const MainScreen(),
+
+      // Show login or dashboard depending on authentication.
+      home: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return const Scaffold(
+              body: Center(
+                child: Text('Unable to check login status.'),
+              ),
+            );
+          }
+
+          if (snapshot.hasData) {
+            return const MainScreen();
+          }
+
+          return const AuthScreen();
+        },
+      ),
     );
   }
 }
@@ -39,7 +76,7 @@ class Friend {
     required this.goal,
   });
 
-  double get progress => steps / goal;
+  double get progress => goal > 0 ? steps / goal : 0.0;
 }
 
 // MAIN NAVIGATION AND SHARED DATA
@@ -63,15 +100,23 @@ class _MainScreenState extends State<MainScreen> {
   ];
 
   void updateGoal(int newGoal) {
+    if (newGoal <= 0) return;
+
     setState(() {
       myGoal = newGoal;
     });
   }
 
   void addFriend(String name) {
+    if (name.trim().isEmpty) return;
+
     setState(() {
       friends.add(
-        Friend(name: name, steps: 0, goal: 10000),
+        Friend(
+          name: name.trim(),
+          steps: 0,
+          goal: 10000,
+        ),
       );
     });
   }
@@ -96,6 +141,28 @@ class _MainScreenState extends State<MainScreen> {
     ];
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('FitTogether'),
+        actions: [
+          IconButton(
+            tooltip: 'Logout',
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              try {
+                await FirebaseAuth.instance.signOut();
+              } on FirebaseAuthException {
+                if (!context.mounted) return;
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Unable to log out. Try again.'),
+                  ),
+                );
+              }
+            },
+          ),
+        ],
+      ),
       body: SafeArea(
         child: pages[selectedIndex],
       ),
@@ -271,6 +338,7 @@ class HomeScreen extends StatelessWidget {
                       steps >= goal
                           ? 'Congratulations! Goal reached!'
                           : 'Keep going! Every step counts.',
+                      textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 20),
                     ElevatedButton.icon(
@@ -289,7 +357,7 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-// FRIENDS SCREEN
+// FRIENDS AND FAMILY SCREEN
 class FriendsScreen extends StatelessWidget {
   final List<Friend> friends;
   final ValueChanged<String> onAddFriend;
@@ -323,6 +391,7 @@ class FriendsScreen extends StatelessWidget {
             ElevatedButton(
               onPressed: () {
                 final name = controller.text.trim();
+
                 if (name.isNotEmpty) {
                   Navigator.pop(dialogContext, name);
                 }
@@ -433,13 +502,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       ...widget.friends,
     ];
 
-    // Rank users by steps or personal goal progress.
     users.sort((a, b) {
       if (!fairCompetition) {
         return b.steps.compareTo(a.steps);
       }
 
-      // Competition scores are capped at 100%.
+      // Fair competition: cap ranking scores at 100%.
       final aScore = a.progress.clamp(0.0, 1.0);
       final bScore = b.progress.clamp(0.0, 1.0);
 
@@ -447,7 +515,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
       if (result != 0) return result;
 
-      // Use total steps to break equal-score ties.
+      // Break ties using the total step count.
       return b.steps.compareTo(a.steps);
     });
 
@@ -467,8 +535,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             const SizedBox(height: 8),
             const Text('See how everyone is doing!'),
             const SizedBox(height: 24),
-
-            // LEADERBOARD SWITCH
             SegmentedButton<bool>(
               segments: const [
                 ButtonSegment<bool>(
@@ -489,9 +555,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 });
               },
             ),
-
             const SizedBox(height: 24),
-
             Text(
               fairCompetition
                   ? 'Personal Goal Leaderboard'
@@ -501,34 +565,24 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-
             const SizedBox(height: 8),
-
             Text(
               fairCompetition
                   ? 'Ranked by progress towards personal goals.'
                   : 'Ranked by total daily steps.',
             ),
-
             const SizedBox(height: 20),
-
-            // RANKING LIST
             ...List.generate(users.length, (index) {
               final user = users[index];
               final rank = index + 1;
-
-              final rankProgress =
-                  user.progress.clamp(0.0, 1.0);
+              final rankProgress = user.progress.clamp(0.0, 1.0);
 
               final score = fairCompetition
                   ? '${(rankProgress * 100).toStringAsFixed(1)}%'
                   : '${user.steps} steps';
 
               final medals = ['🥇', '🥈', '🥉'];
-
-              final rankText = index < 3
-                  ? medals[index]
-                  : '$rank';
+              final rankText = index < 3 ? medals[index] : '$rank';
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 12),
@@ -582,7 +636,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 ),
               );
             }),
-
             if (fairCompetition)
               const Padding(
                 padding: EdgeInsets.only(top: 12),

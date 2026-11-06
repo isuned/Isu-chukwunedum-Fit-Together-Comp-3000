@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "992938607530",
+    "project_id": "fittogether-38930",
+    "storage_bucket": "fittogether-38930.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:992938607530:android:3d3cc6ef6098c0da33e1d3",
+        "android_client_info": {
+          "package_name": "com.example.fit_together"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBpS9X6r8VZ5Y56kFdLrsgqZw_C0uMkrCY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
