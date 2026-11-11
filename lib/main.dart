@@ -1,8 +1,3 @@
-
-
-
-
-
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -12,12 +7,12 @@ import 'firebase_options.dart';
 import 'auth_screen.dart';
 import 'user_profile_service.dart';
 
+import 'real_friends_screen.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   runApp(const FitTogetherApp());
 }
@@ -32,9 +27,7 @@ class FitTogetherApp extends StatelessWidget {
       title: 'FitTogether',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.green,
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
         useMaterial3: true,
       ),
 
@@ -50,16 +43,12 @@ class FitTogetherApp extends StatelessWidget {
 
           if (snapshot.hasError) {
             return const Scaffold(
-              body: Center(
-                child: Text('Unable to check login status.'),
-              ),
+              body: Center(child: Text('Unable to check login status.')),
             );
           }
 
           if (snapshot.hasData) {
-            return MainScreen(
-              key: ValueKey(snapshot.data!.uid),
-            );
+            return MainScreen(key: ValueKey(snapshot.data!.uid));
           }
 
           return const AuthScreen();
@@ -75,11 +64,7 @@ class Friend {
   final int steps;
   final int goal;
 
-  const Friend({
-    required this.name,
-    required this.steps,
-    required this.goal,
-  });
+  const Friend({required this.name, required this.steps, required this.goal});
 
   double get progress => goal > 0 ? steps / goal : 0.0;
 }
@@ -135,13 +120,7 @@ class _MainScreenState extends State<MainScreen> {
     if (name.trim().isEmpty) return;
 
     setState(() {
-      friends.add(
-        Friend(
-          name: name.trim(),
-          steps: 0,
-          goal: 10000,
-        ),
-      );
+      friends.add(Friend(name: name.trim(), steps: 0, goal: 10000));
     });
   }
 
@@ -152,9 +131,7 @@ class _MainScreenState extends State<MainScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Unable to log out. Try again.'),
-        ),
+        const SnackBar(content: Text('Unable to log out. Try again.')),
       );
     }
   }
@@ -164,12 +141,9 @@ class _MainScreenState extends State<MainScreen> {
     return FutureBuilder<void>(
       future: profileInitialization,
       builder: (context, initializationSnapshot) {
-        if (initializationSnapshot.connectionState !=
-            ConnectionState.done) {
+        if (initializationSnapshot.connectionState != ConnectionState.done) {
           return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
+            body: Center(child: CircularProgressIndicator()),
           );
         }
 
@@ -235,9 +209,7 @@ class _MainScreenState extends State<MainScreen> {
 
             if (!profileSnapshot.hasData) {
               return const Scaffold(
-                body: Center(
-                  child: CircularProgressIndicator(),
-                ),
+                body: Center(child: CircularProgressIndicator()),
               );
             }
 
@@ -245,18 +217,15 @@ class _MainScreenState extends State<MainScreen> {
 
             if (profileData == null) {
               return const Scaffold(
-                body: Center(
-                  child: Text('Your user profile was not found.'),
-                ),
+                body: Center(child: Text('Your user profile was not found.')),
               );
             }
 
             final savedGoal = profileData['dailyStepGoal'];
 
-            final int myGoal =
-                savedGoal is int && savedGoal > 0
-                    ? savedGoal
-                    : 10000;
+            final int myGoal = savedGoal is int && savedGoal > 0
+                ? savedGoal
+                : 10000;
 
             final pages = [
               HomeScreen(
@@ -264,10 +233,7 @@ class _MainScreenState extends State<MainScreen> {
                 goal: myGoal,
                 onGoalChanged: updateGoal,
               ),
-              FriendsScreen(
-                friends: friends,
-                onAddFriend: addFriend,
-              ),
+              const RealFriendsScreen(),
               LeaderboardScreen(
                 mySteps: mySteps,
                 myGoal: myGoal,
@@ -286,9 +252,7 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                 ],
               ),
-              body: SafeArea(
-                child: pages[selectedIndex],
-              ),
+              body: SafeArea(child: pages[selectedIndex]),
               bottomNavigationBar: NavigationBar(
                 selectedIndex: selectedIndex,
                 onDestinationSelected: (index) {
@@ -336,9 +300,7 @@ class HomeScreen extends StatelessWidget {
   });
 
   Future<void> changeGoal(BuildContext context) async {
-    final controller = TextEditingController(
-      text: goal.toString(),
-    );
+    final controller = TextEditingController(text: goal.toString());
 
     final newGoal = await showDialog<int>(
       context: context,
@@ -360,9 +322,7 @@ class HomeScreen extends StatelessWidget {
             ),
             ElevatedButton(
               onPressed: () {
-                final value = int.tryParse(
-                  controller.text.trim(),
-                );
+                final value = int.tryParse(controller.text.trim());
 
                 if (value != null && value > 0) {
                   Navigator.pop(dialogContext, value);
@@ -384,19 +344,15 @@ class HomeScreen extends StatelessWidget {
 
       if (!context.mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Daily step goal saved!'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Daily step goal saved!')));
     } catch (_) {
       if (!context.mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Unable to save your step goal. Please try again.',
-          ),
+          content: Text('Unable to save your step goal. Please try again.'),
         ),
       );
     }
@@ -415,10 +371,7 @@ class HomeScreen extends StatelessWidget {
           children: [
             const Text(
               'FitTogether',
-              style: TextStyle(
-                fontSize: 30,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             const Text('Every step counts!'),
@@ -570,10 +523,7 @@ class FriendsScreen extends StatelessWidget {
           children: [
             const Text(
               'Friends & Family',
-              style: TextStyle(
-                fontSize: 30,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             const Text('Stay active together!'),
@@ -588,18 +538,14 @@ class FriendsScreen extends StatelessWidget {
               return Card(
                 margin: const EdgeInsets.only(bottom: 12),
                 child: ListTile(
-                  leading: const CircleAvatar(
-                    child: Icon(Icons.person),
-                  ),
+                  leading: const CircleAvatar(child: Icon(Icons.person)),
                   title: Text(friend.name),
                   subtitle: Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '${friend.steps} / ${friend.goal} steps',
-                        ),
+                        Text('${friend.steps} / ${friend.goal} steps'),
                         const SizedBox(height: 8),
                         LinearProgressIndicator(
                           value: friend.progress.clamp(0.0, 1.0),
@@ -634,8 +580,7 @@ class LeaderboardScreen extends StatefulWidget {
   });
 
   @override
-  State<LeaderboardScreen> createState() =>
-      _LeaderboardScreenState();
+  State<LeaderboardScreen> createState() => _LeaderboardScreenState();
 }
 
 class _LeaderboardScreenState extends State<LeaderboardScreen> {
@@ -644,11 +589,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   @override
   Widget build(BuildContext context) {
     final users = [
-      Friend(
-        name: 'You',
-        steps: widget.mySteps,
-        goal: widget.myGoal,
-      ),
+      Friend(name: 'You', steps: widget.mySteps, goal: widget.myGoal),
       ...widget.friends,
     ];
 
@@ -677,10 +618,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           children: [
             const Text(
               'Leaderboard',
-              style: TextStyle(
-                fontSize: 30,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             const Text('See how everyone is doing!'),
@@ -710,10 +648,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
               fairCompetition
                   ? 'Personal Goal Leaderboard'
                   : 'Most Steps Today',
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
@@ -725,16 +660,14 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             ...List.generate(users.length, (index) {
               final user = users[index];
               final rank = index + 1;
-              final rankProgress =
-                  user.progress.clamp(0.0, 1.0);
+              final rankProgress = user.progress.clamp(0.0, 1.0);
 
               final score = fairCompetition
                   ? '${(rankProgress * 100).toStringAsFixed(1)}%'
                   : '${user.steps} steps';
 
               final medals = ['🥇', '🥈', '🥉'];
-              final rankText =
-                  index < 3 ? medals[index] : '$rank';
+              final rankText = index < 3 ? medals[index] : '$rank';
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 12),
@@ -751,8 +684,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                       ),
                       Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               user.name,
@@ -762,15 +694,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              '${user.steps} / ${user.goal} steps',
-                            ),
+                            Text('${user.steps} / ${user.goal} steps'),
                             const SizedBox(height: 8),
                             LinearProgressIndicator(
                               value: rankProgress,
                               minHeight: 8,
-                              borderRadius:
-                                  BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(10),
                             ),
                           ],
                         ),
@@ -804,4 +733,3 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     );
   }
 }
-

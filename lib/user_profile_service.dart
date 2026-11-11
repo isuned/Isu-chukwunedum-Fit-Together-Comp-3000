@@ -6,26 +6,35 @@ class UserProfileService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  DocumentReference<Map<String, dynamic>> get _userDocument {
+  User get _user {
     final user = _auth.currentUser;
-
     if (user == null) {
-      throw StateError('No user is currently signed in.');
+      throw StateError('No user is signed in.');
     }
-
-    return _firestore.collection('users').doc(user.uid);
+    return user;
   }
 
-  // Create a user profile and fill in any missing default fields.
-  // Existing step goals and profile details are preserved.
-  Future<void> ensureUserProfileExists() async {
-    final user = _auth.currentUser;
+  DocumentReference<Map<String, dynamic>> get _userDocument {
+    return _firestore.collection('users').doc(_user.uid);
+  }
 
-    if (user == null) {
-      throw StateError('No user is currently signed in.');
+  String _safeName(String? name, User user) {
+    final trimmed = name?.trim() ?? '';
+
+    if (trimmed.isNotEmpty) {
+      return trimmed.length > 50
+          ? trimmed.substring(0, 50)
+          : trimmed;
     }
 
-    final document = _firestore.collection('users').doc(user.uid);
+    // Existing accounts may not have a display name.
+    // Avoid putting their email address in the public directory.
+    return 'FitTogether User';
+  }
+
+  Future<void> ensureUserProfileExists() async {
+    final user = _user;
+    final document = _userDocument;
 
     await _firestore.runTransaction((transaction) async {
       final snapshot = await transaction.get(document);
@@ -40,7 +49,6 @@ class UserProfileService {
         return;
       }
 
-      // Fill in missing fields without resetting an existing goal.
       final data = snapshot.data() ?? <String, dynamic>{};
       final missingFields = <String, dynamic>{};
 
@@ -57,24 +65,48 @@ class UserProfileService {
       }
 
       if (!data.containsKey('createdAt')) {
-        missingFields['createdAt'] = FieldValue.serverTimestamp();
+        missingFields['createdAt'] =
+            FieldValue.serverTimestamp();
       }
 
       if (missingFields.isNotEmpty) {
         transaction.update(document, missingFields);
       }
     });
+
+    // Make this account discoverable through friend search.
+    await publishPublicProfile();
   }
 
-  // Receive real-time updates when the user profile changes.
+  Future<void> publishPublicProfile([String? providedName]) async {
+    final user = _user;
+
+    // Use a provided name if available. Otherwise, use the name
+    // from Firebase Authentication or the private profile.
+    String? name = providedName ?? user.displayName;
+
+    if (name == null || name.trim().isEmpty) {
+      final privateProfile = await _userDocument.get();
+      name = privateProfile.data()?['displayName'] as String?;
+    }
+
+    final displayName = _safeName(name, user);
+
+    await _firestore.collection('publicProfiles')
+        .doc(user.uid)
+        .set({
+      'displayName': displayName,
+      'searchName': displayName.toLowerCase(),
+    });
+  }
+
   Stream<DocumentSnapshot<Map<String, dynamic>>> watchProfile() {
     return _userDocument.snapshots();
   }
 
-  // Save the user's chosen daily step goal.
   Future<void> updateDailyStepGoal(int newGoal) async {
     if (newGoal <= 0) {
-      throw ArgumentError('Step goal must be greater than zero.');
+      throw ArgumentError('Step goal must be positive.');
     }
 
     await _userDocument.update({
@@ -82,17 +114,20 @@ class UserProfileService {
     });
   }
 
-  // Save the user's display name.
-  // Using merge avoids deleting any existing goal or profile fields.
   Future<void> updateDisplayName(String newName) async {
     final name = newName.trim();
 
-    if (name.isEmpty) {
-      throw ArgumentError('Display name cannot be empty.');
+    if (name.isEmpty || name.length > 50) {
+      throw ArgumentError(
+        'Display name must be between 1 and 50 characters.',
+      );
     }
 
     await _userDocument.set({
       'displayName': name,
     }, SetOptions(merge: true));
+
+    await publishPublicProfile(name);
   }
 }
+
