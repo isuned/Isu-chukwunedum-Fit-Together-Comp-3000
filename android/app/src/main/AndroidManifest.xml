@@ -1,4 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+
+<uses-permission android:name="android.permission.health.READ_STEPS" />
+<uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+
+<queries>
+    <package android:name="com.google.android.apps.healthdata" />
+    <intent>
+        <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+    </intent>
+</queries>
+
+
     <application
         android:label="fit_together"
         android:name="${applicationName}"
@@ -24,6 +37,12 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+
+<intent-filter>
+    <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+</intent-filter>
+
+
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

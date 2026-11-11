@@ -1,4 +1,6 @@
 
+
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,6 +11,8 @@ import 'auth_screen.dart';
 import 'user_profile_service.dart';
 import 'real_friends_screen.dart';
 import 'real_leaderboard_screen.dart';
+import 'health_service.dart';
+import 'health_test_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,8 +39,6 @@ class FitTogetherApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-
-      // Show login or dashboard depending on authentication.
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {
@@ -77,17 +79,16 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   final UserProfileService profileService = UserProfileService();
+  final HealthService healthService = HealthService();
 
   late Future<void> profileInitialization;
 
   int selectedIndex = 0;
+  bool syncingSteps = false;
 
   @override
   void initState() {
     super.initState();
-
-    // Ensure this user has a saved Firestore profile,
-    // searchable public profile and leaderboard statistics.
     profileInitialization = profileService.ensureUserProfileExists();
   }
 
@@ -99,10 +100,7 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> updateGoal(int newGoal) async {
     if (newGoal <= 0) return;
-
     await profileService.updateDailyStepGoal(newGoal);
-
-    // Firestore updates the dashboard and leaderboard automatically.
   }
 
   Future<void> logout() async {
@@ -117,6 +115,109 @@ class _MainScreenState extends State<MainScreen> {
         ),
       );
     }
+  }
+
+  void openHealthConnectTest() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const HealthTestScreen(),
+      ),
+    );
+  }
+
+  // Read real steps and share today's total with connected friends.
+  Future<void> syncRealSteps() async {
+    if (syncingSteps) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Share Your Steps?'),
+        content: const Text(
+          'FitTogether will read today\'s steps from '
+          'Health Connect and save your daily total '
+          'to Firebase.\n\n'
+          'Your accepted friends will be able to see '
+          'this step count and your goal on the '
+          'leaderboards. Your other health records '
+          'will not be shared.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext, false);
+            },
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(dialogContext, true);
+            },
+            child: const Text('Read and Share'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      syncingSteps = true;
+    });
+
+    try {
+      final realSteps = await healthService.getTodaySteps();
+
+      if (!mounted) return;
+
+      await profileService.updateRealSteps(realSteps);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$realSteps real steps synced successfully!',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Unable to sync steps: $error',
+          ),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          syncingSteps = false;
+        });
+      }
+    }
+  }
+
+  AppBar buildAppBar() {
+    return AppBar(
+      title: const Text('FitTogether'),
+      actions: [
+        IconButton(
+          tooltip: 'Test Health Connect',
+          icon: const Icon(Icons.monitor_heart_outlined),
+          onPressed: openHealthConnectTest,
+        ),
+        IconButton(
+          tooltip: 'Logout',
+          icon: const Icon(Icons.logout),
+          onPressed: logout,
+        ),
+      ],
+    );
   }
 
   @override
@@ -135,60 +236,34 @@ class _MainScreenState extends State<MainScreen> {
 
         if (initializationSnapshot.hasError) {
           return Scaffold(
-            appBar: AppBar(
-              title: const Text('FitTogether'),
-              actions: [
-                IconButton(
-                  tooltip: 'Logout',
-                  icon: const Icon(Icons.logout),
-                  onPressed: logout,
-                ),
-              ],
-            ),
+            appBar: buildAppBar(),
             body: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Unable to load your profile.',
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Check your internet connection '
-                      'and Firestore security rules.',
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: retryProfileInitialization,
-                      child: const Text('Try Again'),
-                    ),
-                  ],
-                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Unable to load your profile.'),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Check your connection and Firestore rules.',
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: retryProfileInitialization,
+                    child: const Text('Try Again'),
+                  ),
+                ],
               ),
             ),
           );
         }
 
-        // Listen for updates to the logged-in user's profile.
-        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        return StreamBuilder<
+            DocumentSnapshot<Map<String, dynamic>>>(
           stream: profileService.watchProfile(),
           builder: (context, profileSnapshot) {
             if (profileSnapshot.hasError) {
               return Scaffold(
-                appBar: AppBar(
-                  title: const Text('FitTogether'),
-                  actions: [
-                    IconButton(
-                      tooltip: 'Logout',
-                      icon: const Icon(Icons.logout),
-                      onPressed: logout,
-                    ),
-                  ],
-                ),
+                appBar: buildAppBar(),
                 body: const Center(
                   child: Text('Unable to retrieve your profile.'),
                 ),
@@ -203,54 +278,68 @@ class _MainScreenState extends State<MainScreen> {
               );
             }
 
-            final profileData = profileSnapshot.data!.data();
+            final data = profileSnapshot.data!.data();
 
-            if (profileData == null) {
-              return const Scaffold(
-                body: Center(
-                  child: Text('Your user profile was not found.'),
+            if (data == null) {
+              return Scaffold(
+                appBar: buildAppBar(),
+                body: const Center(
+                  child: Text('Your profile was not found.'),
                 ),
               );
             }
 
-            // Saved personal daily step goal.
-            final savedGoal = profileData['dailyStepGoal'];
+            final savedGoal = data['dailyStepGoal'];
 
             final int myGoal =
                 savedGoal is int && savedGoal > 0
                     ? savedGoal
                     : 10000;
 
-            // Saved simulated steps for testing.
-            // Android Health Connect will replace these later.
-            final savedSteps = profileData['demoSteps'];
+            final savedDate = data['stepsDate'] as String?;
+            final source = data['stepsSource'] as String?;
+            final isToday =
+                savedDate == UserProfileService.todayDate();
 
-            final int mySteps =
-                savedSteps is int && savedSteps >= 0
-                    ? savedSteps
-                    : 6500;
+            final bool usingRealSteps =
+                isToday && source == 'healthConnect';
+
+            final bool usingDemoSteps =
+                isToday && source == 'demo';
+
+            final savedRealSteps = data['realSteps'];
+            final savedDemoSteps = data['demoSteps'];
+
+            int mySteps = 0;
+
+            if (usingRealSteps && savedRealSteps is int) {
+              mySteps = savedRealSteps;
+            } else if (usingDemoSteps &&
+                savedDemoSteps is int) {
+              mySteps = savedDemoSteps;
+            }
+
+            final String dataLabel = usingRealSteps
+                ? 'Real steps from Health Connect'
+                : usingDemoSteps
+                    ? 'Demo steps (testing only)'
+                    : 'No steps recorded for today';
 
             final pages = [
               HomeScreen(
                 steps: mySteps,
                 goal: myGoal,
+                dataLabel: dataLabel,
                 onGoalChanged: updateGoal,
+                onSyncSteps: syncRealSteps,
+                syncingSteps: syncingSteps,
               ),
               const RealFriendsScreen(),
               const RealLeaderboardScreen(),
             ];
 
             return Scaffold(
-              appBar: AppBar(
-                title: const Text('FitTogether'),
-                actions: [
-                  IconButton(
-                    tooltip: 'Logout',
-                    icon: const Icon(Icons.logout),
-                    onPressed: logout,
-                  ),
-                ],
-              ),
+              appBar: buildAppBar(),
               body: SafeArea(
                 child: pages[selectedIndex],
               ),
@@ -287,17 +376,23 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-// HOME SCREEN
+// HOME DASHBOARD
 class HomeScreen extends StatelessWidget {
   final int steps;
   final int goal;
+  final String dataLabel;
   final Future<void> Function(int) onGoalChanged;
+  final Future<void> Function() onSyncSteps;
+  final bool syncingSteps;
 
   const HomeScreen({
     super.key,
     required this.steps,
     required this.goal,
+    required this.dataLabel,
     required this.onGoalChanged,
+    required this.onSyncSteps,
+    required this.syncingSteps,
   });
 
   Future<void> changeGoal(BuildContext context) async {
@@ -307,40 +402,38 @@ class HomeScreen extends StatelessWidget {
 
     final newGoal = await showDialog<int>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Change Daily Step Goal'),
-          content: TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'New step goal',
-              helperText: 'Enter a value between 1 and 1,000,000',
-              border: OutlineInputBorder(),
-            ),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Change Daily Step Goal'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'New step goal',
+            helperText: 'Between 1 and 1,000,000',
+            border: OutlineInputBorder(),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final value = int.tryParse(
-                  controller.text.trim(),
-                );
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = int.tryParse(
+                controller.text.trim(),
+              );
 
-                if (value != null &&
-                    value > 0 &&
-                    value <= 1000000) {
-                  Navigator.pop(dialogContext, value);
-                }
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
+              if (value != null &&
+                  value > 0 &&
+                  value <= 1000000) {
+                Navigator.pop(dialogContext, value);
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
     );
 
     controller.dispose();
@@ -354,7 +447,7 @@ class HomeScreen extends StatelessWidget {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Daily step goal saved!'),
+          content: Text('Daily goal saved!'),
         ),
       );
     } catch (_) {
@@ -362,9 +455,7 @@ class HomeScreen extends StatelessWidget {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Unable to save your step goal. Please try again.',
-          ),
+          content: Text('Unable to save goal.'),
         ),
       );
     }
@@ -390,13 +481,13 @@ class HomeScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             const Text('Every step counts!'),
-            const SizedBox(height: 40),
+            const SizedBox(height: 30),
             const Text(
               "Today's Steps",
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 22),
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: 24),
             Center(
               child: SizedBox(
                 height: 220,
@@ -431,7 +522,15 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: 16),
+            Text(
+              dataLabel,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey.shade700,
+              ),
+            ),
+            const SizedBox(height: 24),
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(20),
@@ -466,6 +565,23 @@ class HomeScreen extends StatelessWidget {
                   ],
                 ),
               ),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: syncingSteps ? null : onSyncSteps,
+              icon: const Icon(Icons.sync),
+              label: Text(
+                syncingSteps
+                    ? 'Syncing Steps...'
+                    : 'Sync Real Steps',
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Reads today\'s steps from Health Connect '
+              'when you choose to sync.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12),
             ),
           ],
         ),

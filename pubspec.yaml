@@ -38,6 +38,7 @@ dependencies:
   firebase_auth: ^7.0.1
   cloud_firestore: ^7.1.0
   rxdart: ^0.28.0
+  health: ^13.3.2
 
 dev_dependencies:
   flutter_test:

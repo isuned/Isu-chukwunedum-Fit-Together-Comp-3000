@@ -1,4 +1,5 @@
 
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -11,12 +12,16 @@ class LeaderboardEntry {
   final String displayName;
   final int steps;
   final int goal;
+  final bool isDemo;
+  final bool hasTodayData;
 
   const LeaderboardEntry({
     required this.userId,
     required this.displayName,
     required this.steps,
     required this.goal,
+    required this.isDemo,
+    required this.hasTodayData,
   });
 
   double get progress => goal > 0 ? steps / goal : 0;
@@ -28,6 +33,9 @@ class LeaderboardEntry {
   ) {
     final data = document.data() ?? {};
 
+    final date = data['stepsDate'] as String?;
+    final isToday = date == UserProfileService.todayDate();
+
     final rawSteps = data['steps'];
     final rawGoal = data['dailyStepGoal'];
 
@@ -35,8 +43,10 @@ class LeaderboardEntry {
       userId: document.id,
       displayName:
           data['displayName'] as String? ?? 'FitTogether User',
-      steps: rawSteps is int ? rawSteps : 0,
+      steps: isToday && rawSteps is int ? rawSteps : 0,
       goal: rawGoal is int && rawGoal > 0 ? rawGoal : 10000,
+      isDemo: data['isDemo'] != false,
+      hasTodayData: isToday,
     );
   }
 }
@@ -105,8 +115,7 @@ class _RealLeaderboardScreenState
     ).switchMap((friends) {
       final userIds = <String>{myId, ...friends};
 
-      // Read individual documents so the friend-only
-      // Firestore security rules can validate each one.
+      // Read only the current user and their accepted friends.
       final streams = userIds.map((userId) {
         return firestore
             .collection('leaderboardStats')
@@ -126,50 +135,45 @@ class _RealLeaderboardScreenState
     });
   }
 
-  Future<void> editDemoSteps(
-    BuildContext context,
-    int currentSteps,
-  ) async {
+  Future<void> editDemoSteps(int currentSteps) async {
     final controller = TextEditingController(
       text: currentSteps.toString(),
     );
 
     final newSteps = await showDialog<int>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Change Demo Steps'),
-          content: TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Simulated daily steps',
-              helperText: 'Testing only, not real activity data',
-              border: OutlineInputBorder(),
-            ),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Change Demo Steps'),
+        content: TextField(
+  controller: controller,
+  keyboardType: TextInputType.number,
+  decoration: const InputDecoration(
+    labelText: 'Simulated daily steps',
+    helperText: 'Testing only, not real activity data',
+    border: OutlineInputBorder(),
+  ),
+),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final value = int.tryParse(
-                  controller.text.trim(),
-                );
+          FilledButton(
+            onPressed: () {
+              final value = int.tryParse(
+                controller.text.trim(),
+              );
 
-                if (value != null &&
-                    value >= 0 &&
-                    value <= 1000000) {
-                  Navigator.pop(dialogContext, value);
-                }
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
+              if (value != null &&
+                  value >= 0 &&
+                  value <= 1000000) {
+                Navigator.pop(dialogContext, value);
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
     );
 
     controller.dispose();
@@ -187,7 +191,7 @@ class _RealLeaderboardScreenState
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Demo step count saved.'),
+          content: Text('Demo steps saved.'),
         ),
       );
     } catch (_) {
@@ -218,8 +222,7 @@ class _RealLeaderboardScreenState
               padding: EdgeInsets.all(24),
               child: Text(
                 'Unable to load the leaderboard. '
-                'Check your Firestore security rules '
-                'and internet connection.',
+                'Check your Firestore security rules.',
                 textAlign: TextAlign.center,
               ),
             ),
@@ -240,10 +243,10 @@ class _RealLeaderboardScreenState
 
             if (result != 0) return result;
           } else {
-            final result =
+            final scoreResult =
                 b.fairScore.compareTo(a.fairScore);
 
-            if (result != 0) return result;
+            if (scoreResult != 0) return scoreResult;
 
             final stepsResult =
                 b.steps.compareTo(a.steps);
@@ -254,13 +257,14 @@ class _RealLeaderboardScreenState
           return a.userId.compareTo(b.userId);
         });
 
-        final myEntries = users.where(
-          (user) => user.userId == myId,
-        );
+        LeaderboardEntry? myEntry;
 
-        final myEntry = myEntries.isNotEmpty
-            ? myEntries.first
-            : null;
+        for (final user in users) {
+          if (user.userId == myId) {
+            myEntry = user;
+            break;
+          }
+        }
 
         return Center(
           child: ConstrainedBox(
@@ -280,6 +284,7 @@ class _RealLeaderboardScreenState
                   'Compete with your connected friends!',
                 ),
                 const SizedBox(height: 16),
+
                 const Card(
                   child: Padding(
                     padding: EdgeInsets.all(12),
@@ -289,15 +294,18 @@ class _RealLeaderboardScreenState
                         SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Demo mode: step counts are simulated '
-                            'until Health Connect is integrated.',
+                            'Steps may be simulated or shared '
+                            'from Health Connect. Each entry '
+                            'shows its data source.',
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
+
                 const SizedBox(height: 20),
+
                 SegmentedButton<bool>(
                   segments: const [
                     ButtonSegment<bool>(
@@ -318,7 +326,9 @@ class _RealLeaderboardScreenState
                     });
                   },
                 ),
+
                 const SizedBox(height: 24),
+
                 Text(
                   fairCompetition
                       ? 'Personal Goal Leaderboard'
@@ -328,35 +338,47 @@ class _RealLeaderboardScreenState
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+
                 const SizedBox(height: 8),
+
                 Text(
                   fairCompetition
-                      ? 'Ranked by percentage of personal goals.'
-                      : 'Ranked by simulated daily steps.',
+                      ? 'Ranked by personal goal completion.'
+                      : 'Ranked by total daily steps.',
                 ),
+
                 const SizedBox(height: 18),
+
                 if (myEntry != null)
                   OutlinedButton.icon(
                     onPressed: savingSteps
                         ? null
-                        : () => editDemoSteps(
-                              context,
-                              myEntry.steps,
-                            ),
+                        : () => editDemoSteps(myEntry!.steps),
                     icon: const Icon(Icons.edit),
-                    label: Text(
-                      'Change My Demo Steps (${myEntry.steps})',
+                    label: const Text(
+                      'Change My Demo Steps',
                     ),
                   ),
+
+                const SizedBox(height: 8),
+
+                const Text(
+                  'Changing demo steps switches your entry '
+                  'back to simulated data.',
+                  style: TextStyle(fontSize: 12),
+                ),
+
                 const SizedBox(height: 20),
+
                 if (users.length == 1)
                   const Padding(
                     padding: EdgeInsets.only(bottom: 16),
                     child: Text(
                       'Only you are on this leaderboard. '
-                      'Connect with a friend to start competing.',
+                      'Connect with a friend to compete.',
                     ),
                   ),
+
                 ...List.generate(users.length, (index) {
                   final user = users[index];
                   final rank = index + 1;
@@ -375,6 +397,12 @@ class _RealLeaderboardScreenState
                       : '$rank';
 
                   final isMe = user.userId == myId;
+
+                  final sourceLabel = !user.hasTodayData
+                      ? 'Not synced today'
+                      : user.isDemo
+                          ? 'Demo steps'
+                          : 'Health Connect steps';
 
                   return Card(
                     margin: const EdgeInsets.only(bottom: 12),
@@ -409,6 +437,14 @@ class _RealLeaderboardScreenState
                                 Text(
                                   '${user.steps} / ${user.goal} steps',
                                 ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  sourceLabel,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                  ),
+                                ),
                                 const SizedBox(height: 8),
                                 LinearProgressIndicator(
                                   value: progress,
@@ -431,12 +467,13 @@ class _RealLeaderboardScreenState
                     ),
                   );
                 }),
+
                 if (fairCompetition)
                   const Padding(
                     padding: EdgeInsets.only(top: 12),
                     child: Text(
                       'Fair scores are capped at 100%. '
-                      'Equal scores are ranked by step count.',
+                      'Ties are broken by total steps.',
                       style: TextStyle(fontSize: 13),
                     ),
                   ),
@@ -448,3 +485,4 @@ class _RealLeaderboardScreenState
     );
   }
 }
+
