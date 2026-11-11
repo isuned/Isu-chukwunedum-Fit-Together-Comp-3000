@@ -1,6 +1,9 @@
 
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
+import 'user_profile_service.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -16,6 +19,8 @@ class _AuthScreenState extends State<AuthScreen> {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   final confirmController = TextEditingController();
+
+  final UserProfileService profileService = UserProfileService();
 
   bool isLogin = true;
   bool isLoading = false;
@@ -45,15 +50,20 @@ class _AuthScreenState extends State<AuthScreen> {
           password: passwordController.text,
         );
       } else {
+        final displayName = nameController.text.trim();
+
         final result = await FirebaseAuth.instance
             .createUserWithEmailAndPassword(
           email: emailController.text.trim(),
           password: passwordController.text,
         );
 
-        await result.user?.updateDisplayName(
-          nameController.text.trim(),
-        );
+        // Save display name in Firebase Authentication.
+        await result.user?.updateDisplayName(displayName);
+
+        // Save display name in Cloud Firestore as well.
+        // The main screen fills in the default profile fields.
+        await profileService.updateDisplayName(displayName);
       }
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
@@ -86,7 +96,8 @@ class _AuthScreenState extends State<AuthScreen> {
       if (!mounted) return;
 
       setState(() {
-        errorMessage = 'Something went wrong. Please try again.';
+        errorMessage =
+            'Something went wrong. Please try again.';
       });
     } finally {
       if (mounted) {
@@ -108,16 +119,15 @@ class _AuthScreenState extends State<AuthScreen> {
             child: Form(
               key: formKey,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                crossAxisAlignment:
+                    CrossAxisAlignment.stretch,
                 children: [
                   const Icon(
                     Icons.directions_walk,
                     size: 65,
                     color: Colors.green,
                   ),
-
                   const SizedBox(height: 16),
-
                   const Text(
                     'FitTogether',
                     textAlign: TextAlign.center,
@@ -126,16 +136,13 @@ class _AuthScreenState extends State<AuthScreen> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-
                   const SizedBox(height: 8),
-
                   Text(
                     isLogin
                         ? 'Welcome back!'
                         : 'Start your fitness journey!',
                     textAlign: TextAlign.center,
                   ),
-
                   const SizedBox(height: 32),
 
                   if (!isLogin) ...[

@@ -2,12 +2,15 @@
 
 
 
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'firebase_options.dart';
 import 'auth_screen.dart';
+import 'user_profile_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -54,7 +57,9 @@ class FitTogetherApp extends StatelessWidget {
           }
 
           if (snapshot.hasData) {
-            return const MainScreen();
+            return MainScreen(
+              key: ValueKey(snapshot.data!.uid),
+            );
           }
 
           return const AuthScreen();
@@ -88,23 +93,42 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
+  final UserProfileService profileService = UserProfileService();
+
+  late Future<void> profileInitialization;
+
   int selectedIndex = 0;
 
-  int mySteps = 6500;
-  int myGoal = 10000;
+  // Mock step data until Android Health Connect is integrated.
+  final int mySteps = 6500;
 
+  // Mock friends until the real friends system is implemented.
   final List<Friend> friends = [
     const Friend(name: 'Brother', steps: 10000, goal: 12000),
     const Friend(name: 'Alex', steps: 7500, goal: 10000),
     const Friend(name: 'Sarah', steps: 4200, goal: 8000),
   ];
 
-  void updateGoal(int newGoal) {
+  @override
+  void initState() {
+    super.initState();
+
+    profileInitialization = profileService.ensureUserProfileExists();
+  }
+
+  void retryProfileInitialization() {
+    setState(() {
+      profileInitialization = profileService.ensureUserProfileExists();
+    });
+  }
+
+  Future<void> updateGoal(int newGoal) async {
     if (newGoal <= 0) return;
 
-    setState(() {
-      myGoal = newGoal;
-    });
+    await profileService.updateDailyStepGoal(newGoal);
+
+    // The Firestore StreamBuilder below automatically updates
+    // the dashboard and leaderboard after the goal changes.
   }
 
   void addFriend(String name) {
@@ -121,76 +145,179 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
+  Future<void> logout() async {
+    try {
+      await FirebaseAuth.instance.signOut();
+    } on FirebaseAuthException {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to log out. Try again.'),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      HomeScreen(
-        steps: mySteps,
-        goal: myGoal,
-        onGoalChanged: updateGoal,
-      ),
-      FriendsScreen(
-        friends: friends,
-        onAddFriend: addFriend,
-      ),
-      LeaderboardScreen(
-        mySteps: mySteps,
-        myGoal: myGoal,
-        friends: friends,
-      ),
-    ];
+    return FutureBuilder<void>(
+      future: profileInitialization,
+      builder: (context, initializationSnapshot) {
+        if (initializationSnapshot.connectionState !=
+            ConnectionState.done) {
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('FitTogether'),
-        actions: [
-          IconButton(
-            tooltip: 'Logout',
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              try {
-                await FirebaseAuth.instance.signOut();
-              } on FirebaseAuthException {
-                if (!context.mounted) return;
+        if (initializationSnapshot.hasError) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('FitTogether'),
+              actions: [
+                IconButton(
+                  tooltip: 'Logout',
+                  icon: const Icon(Icons.logout),
+                  onPressed: logout,
+                ),
+              ],
+            ),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Unable to load your profile.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Check your connection and Firestore rules.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: retryProfileInitialization,
+                      child: const Text('Try Again'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
 
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Unable to log out. Try again.'),
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: profileService.watchProfile(),
+          builder: (context, profileSnapshot) {
+            if (profileSnapshot.hasError) {
+              return Scaffold(
+                appBar: AppBar(
+                  title: const Text('FitTogether'),
+                  actions: [
+                    IconButton(
+                      tooltip: 'Logout',
+                      icon: const Icon(Icons.logout),
+                      onPressed: logout,
+                    ),
+                  ],
+                ),
+                body: const Center(
+                  child: Text('Unable to retrieve your profile.'),
+                ),
+              );
+            }
+
+            if (!profileSnapshot.hasData) {
+              return const Scaffold(
+                body: Center(
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            }
+
+            final profileData = profileSnapshot.data!.data();
+
+            if (profileData == null) {
+              return const Scaffold(
+                body: Center(
+                  child: Text('Your user profile was not found.'),
+                ),
+              );
+            }
+
+            final savedGoal = profileData['dailyStepGoal'];
+
+            final int myGoal =
+                savedGoal is int && savedGoal > 0
+                    ? savedGoal
+                    : 10000;
+
+            final pages = [
+              HomeScreen(
+                steps: mySteps,
+                goal: myGoal,
+                onGoalChanged: updateGoal,
+              ),
+              FriendsScreen(
+                friends: friends,
+                onAddFriend: addFriend,
+              ),
+              LeaderboardScreen(
+                mySteps: mySteps,
+                myGoal: myGoal,
+                friends: friends,
+              ),
+            ];
+
+            return Scaffold(
+              appBar: AppBar(
+                title: const Text('FitTogether'),
+                actions: [
+                  IconButton(
+                    tooltip: 'Logout',
+                    icon: const Icon(Icons.logout),
+                    onPressed: logout,
                   ),
-                );
-              }
-            },
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: pages[selectedIndex],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: selectedIndex,
-        onDestinationSelected: (index) {
-          setState(() {
-            selectedIndex = index;
-          });
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.people_outline),
-            selectedIcon: Icon(Icons.people),
-            label: 'Friends',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.leaderboard_outlined),
-            selectedIcon: Icon(Icons.leaderboard),
-            label: 'Leaderboard',
-          ),
-        ],
-      ),
+                ],
+              ),
+              body: SafeArea(
+                child: pages[selectedIndex],
+              ),
+              bottomNavigationBar: NavigationBar(
+                selectedIndex: selectedIndex,
+                onDestinationSelected: (index) {
+                  setState(() {
+                    selectedIndex = index;
+                  });
+                },
+                destinations: const [
+                  NavigationDestination(
+                    icon: Icon(Icons.home_outlined),
+                    selectedIcon: Icon(Icons.home),
+                    label: 'Home',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.people_outline),
+                    selectedIcon: Icon(Icons.people),
+                    label: 'Friends',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.leaderboard_outlined),
+                    selectedIcon: Icon(Icons.leaderboard),
+                    label: 'Leaderboard',
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -199,7 +326,7 @@ class _MainScreenState extends State<MainScreen> {
 class HomeScreen extends StatelessWidget {
   final int steps;
   final int goal;
-  final ValueChanged<int> onGoalChanged;
+  final Future<void> Function(int) onGoalChanged;
 
   const HomeScreen({
     super.key,
@@ -233,7 +360,9 @@ class HomeScreen extends StatelessWidget {
             ),
             ElevatedButton(
               onPressed: () {
-                final value = int.tryParse(controller.text.trim());
+                final value = int.tryParse(
+                  controller.text.trim(),
+                );
 
                 if (value != null && value > 0) {
                   Navigator.pop(dialogContext, value);
@@ -248,8 +377,28 @@ class HomeScreen extends StatelessWidget {
 
     controller.dispose();
 
-    if (newGoal != null) {
-      onGoalChanged(newGoal);
+    if (newGoal == null || !context.mounted) return;
+
+    try {
+      await onGoalChanged(newGoal);
+
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Daily step goal saved!'),
+        ),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Unable to save your step goal. Please try again.',
+          ),
+        ),
+      );
     }
   }
 
@@ -358,6 +507,7 @@ class HomeScreen extends StatelessWidget {
 }
 
 // FRIENDS AND FAMILY SCREEN
+// Friends are still mock data at this development stage.
 class FriendsScreen extends StatelessWidget {
   final List<Friend> friends;
   final ValueChanged<String> onAddFriend;
@@ -575,14 +725,16 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             ...List.generate(users.length, (index) {
               final user = users[index];
               final rank = index + 1;
-              final rankProgress = user.progress.clamp(0.0, 1.0);
+              final rankProgress =
+                  user.progress.clamp(0.0, 1.0);
 
               final score = fairCompetition
                   ? '${(rankProgress * 100).toStringAsFixed(1)}%'
                   : '${user.steps} steps';
 
               final medals = ['🥇', '🥈', '🥉'];
-              final rankText = index < 3 ? medals[index] : '$rank';
+              final rankText =
+                  index < 3 ? medals[index] : '$rank';
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 12),
@@ -652,3 +804,4 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     );
   }
 }
+

@@ -57,7 +57,6 @@ class DefaultFirebaseOptions {
     projectId: 'fittogether-38930',
     storageBucket: 'fittogether-38930.firebasestorage.app',
   );
-
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyAmPBwFOstR0VuWAMnMIbxSzTNRdR17rLk',
     appId: '1:992938607530:ios:d2a98aa119787fca33e1d3',
@@ -66,7 +65,6 @@ class DefaultFirebaseOptions {
     storageBucket: 'fittogether-38930.firebasestorage.app',
     iosBundleId: 'com.example.fitTogether',
   );
-
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyAmPBwFOstR0VuWAMnMIbxSzTNRdR17rLk',
     appId: '1:992938607530:ios:d2a98aa119787fca33e1d3',
